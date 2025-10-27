@@ -1,0 +1,8 @@
+Flask
+google-cloud-storage
+google-cloud-firestore
+firebase-admin
+ffmpeg-python
+opencv-python-headless # Use headless for server environments
+numpy # Often needed for image processing
+Pillow # Image handling
