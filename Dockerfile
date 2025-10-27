@@ -23,6 +23,8 @@ ARG UBUNTU_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV QT_XCB_GL_INTEGRATION=xcb_egl
+
+# Install core dependencies, including python3.10-distutils for robust package compilation.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         git \
@@ -47,6 +49,8 @@ RUN apt-get update && \
         libceres-dev \
         python3.10-dev \
         python3-pip \
+        # *** CRUCIAL ADDITION ***: Ensure necessary python dev tools for compilation
+        python3.10-distutils \
         # <<< ADDED FOR API SERVER >>> Add ffmpeg system library for video processing
         ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -89,7 +93,7 @@ RUN git clone https://github.com/colmap/colmap.git && \
     ninja install -j1 && \
     cd ~
 
-# Upgrade pip and install dependencies.
+# Upgrade pip and install all dependencies in one block (now that environment is more robust).
 RUN pip install --no-cache-dir --upgrade pip 'setuptools<70.0.0' && \
     pip install --no-cache-dir torch==2.1.2+cu118 torchvision==0.16.2+cu118 'numpy<2.0.0' --extra-index-url https://download.pytorch.org/whl/cu118 && \
     git clone --branch master --recursive https://github.com/cvg/Hierarchical-Localization.git /opt/hloc && \
@@ -169,6 +173,11 @@ COPY app.py .
 
 # Install nerfstudio cli auto completion (Keep this, useful if debugging inside container)
 RUN /bin/bash -c 'ns-install-cli --mode install'
+
+# <<< MODIFIED CMD FOR API SERVER >>>
+# Run the Gunicorn server instead of bash
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--timeout", "900", "--workers", "1", "app:app"]
+# Using only 1 worker as Nerfstudio likely uses the full GPU
 
 # <<< MODIFIED CMD FOR API SERVER >>>
 # Run the Gunicorn server instead of bash
