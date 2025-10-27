@@ -3,8 +3,9 @@ ARG UBUNTU_VERSION=22.04
 ARG NVIDIA_CUDA_VERSION=11.8.0
 # CUDA architectures, required by Colmap and tiny-cuda-nn. Use >= 8.0 for faster TCNN.
 ARG CUDA_ARCHITECTURES="90;89;86;80;75;70;61"
-ARG NERFSTUDIO_VERSION=""
+ARG NERFSTUDIO_VERSION="" # Keep empty to use main branch unless needed
 
+# ---- Stage 0: Source Handling (No changes needed here) ----
 # Pull source either provided or from git.
 FROM scratch as source_copy
 ONBUILD COPY . /tmp/nerfstudio
@@ -14,6 +15,7 @@ ONBUILD RUN git clone --branch ${NERFSTUDIO_VERSION} --recursive https://github.
 ARG NERFSTUDIO_VERSION
 FROM source_${NERFSTUDIO_VERSION:+no_}copy as source
 
+# ---- Stage 1: Builder (Installs Nerfstudio and dependencies) ----
 FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} as builder
 ARG CUDA_ARCHITECTURES
 ARG NVIDIA_CUDA_VERSION
@@ -44,7 +46,15 @@ RUN apt-get update && \
         libcgal-dev \
         libceres-dev \
         python3.10-dev \
-        python3-pip
+        python3-pip \
+        # <<< ADDED FOR API SERVER >>> Add ffmpeg system library for video processing
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make python3.10 the default python
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
 
 # Build and install CMake
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.31.3/cmake-3.31.3-linux-x86_64.sh \
@@ -54,7 +64,7 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v3.31.3/cmake-3.31.3
     && /tmp/cmake-install.sh --skip-license --prefix=/opt/cmake-3.31.3 \
     && rm /tmp/cmake-install.sh \
     && ln -s /opt/cmake-3.31.3/bin/* /usr/local/bin
-    
+
 # Build and install GLOMAP.
 RUN git clone https://github.com/colmap/glomap.git && \
     cd glomap && \
@@ -80,7 +90,6 @@ RUN git clone https://github.com/colmap/colmap.git && \
     cd ~
 
 # Upgrade pip and install dependencies.
-# pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cu118 && \
 RUN pip install --no-cache-dir --upgrade pip 'setuptools<70.0.0' && \
     pip install --no-cache-dir torch==2.1.2+cu118 torchvision==0.16.2+cu118 'numpy<2.0.0' --extra-index-url https://download.pytorch.org/whl/cu118 && \
     git clone --branch master --recursive https://github.com/cvg/Hierarchical-Localization.git /opt/hloc && \
@@ -89,11 +98,6 @@ RUN pip install --no-cache-dir --upgrade pip 'setuptools<70.0.0' && \
     pip install --no-cache-dir pycolmap==0.6.1 pyceres==2.1 omegaconf==2.3.0
 
 # Install gsplat and nerfstudio.
-# NOTE: both are installed jointly in order to prevent docker cache with latest
-# gsplat version (we do not expliticly specify the commit hash).
-#
-# We set MAX_JOBS to reduce resource usage for GH actions:
-# - https://github.com/nerfstudio-project/gsplat/blob/db444b904976d6e01e79b736dd89a1070b0ee1d0/setup.py#L13-L23
 COPY --from=source /tmp/nerfstudio/ /tmp/nerfstudio
 RUN export TORCH_CUDA_ARCH_LIST="$(echo "$CUDA_ARCHITECTURES" | tr ';' '\n' | awk '$0 > 70 {print substr($0,1,1)"."substr($0,2)}' | tr '\n' ' ' | sed 's/ $//')" && \
     export MAX_JOBS=4 && \
@@ -106,9 +110,7 @@ RUN export TORCH_CUDA_ARCH_LIST="$(echo "$CUDA_ARCHITECTURES" | tr ';' '\n' | aw
 RUN chmod -R go=u /usr/local/lib/python3.10 && \
     chmod -R go=u /build
 
-#
-# Docker runtime stage.
-#
+# ---- Stage 2: Runtime (Final Image) ----
 FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} as runtime
 ARG CUDA_ARCHITECTURES
 ARG NVIDIA_CUDA_VERSION
@@ -120,8 +122,6 @@ LABEL org.opencontainers.image.base.name="docker.io/library/nvidia/cuda:${NVIDIA
 LABEL org.opencontainers.image.documentation = "https://docs.nerf.studio/"
 
 # Minimal dependencies to run COLMAP binary compiled in the builder stage.
-# Note: this reduces the size of the final image considerably, since all the
-# build dependencies are not needed.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         libboost-filesystem1.74.0 \
@@ -140,7 +140,15 @@ RUN apt-get update && \
         python3.10-dev \
         build-essential \
         python-is-python3 \
-        ffmpeg
+        ffmpeg \
+        # <<< ADDED FOR API SERVER >>> Add git and pip for installing our requirements
+        git \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make python3.10 the default python
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 # Copy packages from builder stage.
 COPY --from=builder /build/colmap/ /usr/local/
@@ -148,8 +156,21 @@ COPY --from=builder /build/glomap/ /usr/local/
 COPY --from=builder /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 COPY --from=builder /usr/local/bin/ns* /usr/local/bin/
 
-# Install nerfstudio cli auto completion
+# <<< ADDED FOR API SERVER >>>
+# Install our API server dependencies and Gunicorn
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install gunicorn
+
+# Copy our API server code
+COPY app.py .
+# <<< END ADDED SECTION >>>
+
+# Install nerfstudio cli auto completion (Keep this, useful if debugging inside container)
 RUN /bin/bash -c 'ns-install-cli --mode install'
 
-# Bash as default entrypoint.
-CMD /bin/bash -l
+# <<< MODIFIED CMD FOR API SERVER >>>
+# Run the Gunicorn server instead of bash
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--timeout", "900", "--workers", "1", "app:app"]
+# Using only 1 worker as Nerfstudio likely uses the full GPU
