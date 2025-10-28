@@ -1,41 +1,46 @@
-name: Build and Push Docker Image to GHCR
+# Naam van de workflow
+name: Build and Push Docker to GHCR
 
-# Run this workflow manually from the Actions tab or on pushes to the main branch
+# Triggert de workflow bij een push naar de 'main' branch
+# of handmatig via het tabblad Actions
 on:
   push:
-    branches: [ "main" ] # Or your default branch name if different
-  workflow_dispatch: # Allows manual triggering
+    branches: [ "main" ] # Pas dit aan als je default branch anders heet
+  workflow_dispatch:
 
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
+    
+    # BELANGRIJK: Geeft de job permissie om naar GHCR te schrijven
     permissions:
       contents: read
-      packages: write # <<< IMPORTANT: Permission to write to GHCR
+      packages: write
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    # Deze stappen zijn nodig voor de Nerfstudio Docker build
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to GitHub Container Registry
+    # Logt in op de GitHub Container Registry (GHCR)
+    - name: Log in to GHCR
       uses: docker/login-action@v3
       with:
         registry: ghcr.io
-        username: ${{ github.repository_owner }} # Your GitHub username/org
-        password: ${{ secrets.GITHUB_TOKEN }}   # <<< Use the automatically provided GitHub token
+        username: ${{ github.repository_owner }} # Je GitHub-gebruikersnaam
+        password: ${{ secrets.GITHUB_TOKEN }}   # Dit token wordt automatisch aangemaakt
 
+    # Bouwt het Dockerfile uit de Nerfstudio-repo en pusht het naar GHCR
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile
+        file: ./Dockerfile  # Gebruikt het standaard Dockerfile van Nerfstudio
         push: true
-        # <<< CHANGE: Tag format for GHCR
-        tags: ghcr.io/${{ github.repository_owner }}/nerfstudio-runner:latest
-        # Example tag: ghcr.io/gipsyking5/nerfstudio-runner:latest
+        tags: ghcr.io/${{ github.repository_owner }}/nerfstudio:latest
+        # Voorbeeld tag: ghcr.io/JouwNaam/nerfstudio:latest
