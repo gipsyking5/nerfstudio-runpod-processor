@@ -25,32 +25,32 @@ ENV QT_XCB_GL_INTEGRATION=xcb_egl
 
 # Install core dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends --no-install-suggests \
-        git \
-        wget \
-        ninja-build \
-        build-essential \
-        libboost-program-options-dev \
-        libboost-filesystem-dev \
-        libboost-graph-dev \
-        libboost-system-dev \
-        libeigen3-dev \
-        libflann-dev \
-        libfreeimage-dev \
-        libmetis-dev \
-        libgoogle-glog-dev \
-        libgtest-dev \
-        libsqlite3-dev \
-        libglew-dev \
-        qtbase5-dev \
-        libqt5opengl5-dev \
-        libcgal-dev \
-        libceres-dev \
-        python3.10-dev \
-        python3-pip \
-        python3.10-distutils \
-        ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        git \
+        wget \
+        ninja-build \
+        build-essential \
+        libboost-program-options-dev \
+        libboost-filesystem-dev \
+        libboost-graph-dev \
+        libboost-system-dev \
+        libeigen3-dev \
+        libflann-dev \
+        libfreeimage-dev \
+        libmetis-dev \
+        libgoogle-glog-dev \
+        libgtest-dev \
+        libsqlite3-dev \
+        libglew-dev \
+        qtbase5-dev \
+        libqt5opengl5-dev \
+        libcgal-dev \
+        libceres-dev \
+        python3.10-dev \
+        python3-pip \
+        python3.10-distutils \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Make python3.10 the default python
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
@@ -59,36 +59,36 @@ RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 # Build and install CMake
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.31.3/cmake-3.31.3-linux-x86_64.sh \
-    -q -O /tmp/cmake-install.sh \
-    && chmod u+x /tmp/cmake-install.sh \
-    && mkdir /opt/cmake-3.31.3 \
-    && /tmp/cmake-install.sh --skip-license --prefix=/opt/cmake-3.31.3 \
-    && rm /tmp/cmake-install.sh \
-    && ln -s /opt/cmake-3.31.3/bin/* /usr/local/bin
+    -q -O /tmp/cmake-install.sh \
+    && chmod u+x /tmp/cmake-install.sh \
+    && mkdir /opt/cmake-3.31.3 \
+    && /tmp/cmake-install.sh --skip-license --prefix=/opt/cmake-3.31.3 \
+    && rm /tmp/cmake-install.sh \
+    && ln -s /opt/cmake-3.31.3/bin/* /usr/local/bin
 
 # Build and install GLOMAP.
 RUN git clone https://github.com/colmap/glomap.git && \
-    cd glomap && \
-    git checkout "1.0.0" && \
-    mkdir build && \
-    cd build && \
-    mkdir -p /build && \
-    cmake .. -GNinja "-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}" \
-        -DCMAKE_INSTALL_PREFIX=/build/glomap && \
-    ninja install -j1 && \
-    cd ~
+    cd glomap && \
+    git checkout "1.0.0" && \
+    mkdir build && \
+    cd build && \
+    mkdir -p /build && \
+    cmake .. -GNinja "-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}" \
+        -DCMAKE_INSTALL_PREFIX=/build/glomap && \
+    ninja install -j1 && \
+    cd ~
 
 # Build and install COLMAP.
 RUN git clone https://github.com/colmap/colmap.git && \
-    cd colmap && \
-    git checkout "3.9.1" && \
-    mkdir build && \
-    cd build && \
-    mkdir -p /build && \
-    cmake .. -GNinja "-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}" \
-        -DCMAKE_INSTALL_PREFIX=/build/colmap && \
-    ninja install -j1 && \
-    cd ~
+    cd colmap && \
+    git checkout "3.9.1" && \
+    mkdir build && \
+    cd build && \
+    mkdir -p /build && \
+    cmake .. -GNinja "-DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}" \
+        -DCMAKE_INSTALL_PREFIX=/build/colmap && \
+    ninja install -j1 && \
+    cd ~
 
 # Upgrade pip and install all dependencies in one block
 # 1. Upgrade pip en installeer setuptools
@@ -99,28 +99,30 @@ RUN pip install --no-cache-dir torch==2.1.2+cu118 torchvision==0.16.2+cu118 'num
 
 # 3. Installeer hloc
 RUN git clone --branch master --recursive https://github.com/cvg/Hierarchical-Localization.git /opt/hloc && \
-    cd /opt/hloc && git checkout v1.4 && python3.10 -m pip install --no-cache-dir . && cd ~ && \
-    rm -rf /opt/hloc
+    cd /opt/hloc && git checkout v1.4 && python3.10 -m pip install --no-cache-dir . && cd ~ && \
+    rm -rf /opt/hloc
 
 # 4. Installeer tiny-cuda-nn (met de --no-build-isolation vlag)
 RUN TCNN_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" pip install --no-cache-dir --no-build-isolation \
-    "git+https://github.com/NVlabs/tiny-cuda-nn.git@b3473c81396fe927293bdfd5a6be32df8769927c#subdirectory=bindings/torch"
+    "git+https://github.com/NVlabs/tiny-cuda-nn.git@b3473c81396fe927293bdfd5a6be32df8769927c#subdirectory=bindings/torch"
 
 # 5. Installeer de overige pakketten
 RUN pip install --no-cache-dir pycolmap==0.6.1 pyceres==2.1 omegaconf==2.3.0
 
 # Install gsplat and nerfstudio.
 COPY --from=source /tmp/nerfstudio/ /tmp/nerfstudio
+# FIX START: Vervang de falende installatie van gsplat met een specifieke, bekende werkende commit.
 RUN export TORCH_CUDA_ARCH_LIST="$(echo "$CUDA_ARCHITECTURES" | tr ';' '\n' | awk '$0 > 70 {print substr($0,1,1)"."substr($0,2)}' | tr '\n' ' ' | sed 's/ $//')" && \
-    export MAX_JOBS=4 && \
-    GSPLAT_VERSION="$(sed -n 's/.*gsplat==\s*\([^," '"'"']*\).*/\1/p' /tmp/nerfstudio/pyproject.toml)" && \
-    pip install --no-cache-dir git+https://github.com/nerfstudio-project/gsplat.git@v${GSPLAT_VERSION} && \
-    pip install --no-cache-dir /tmp/nerfstudio 'numpy<2.0.0' && \
-    rm -rf /tmp/nerfstudio
+    export MAX_JOBS=4 && \
+    # Gebruik een vaste commit van gsplat om compilatieproblemen met de nieuwste HEAD te vermijden.
+    pip install --no-cache-dir "git+https://github.com/nerfstudio-project/gsplat.git@6d72110c3f5ccdb1e2f9d51111d4e022f4762551" && \
+    pip install --no-cache-dir /tmp/nerfstudio 'numpy<2.0.0' && \
+    rm -rf /tmp/nerfstudio
+# FIX END
 
 # Fix permissions
 RUN chmod -R go=u /usr/local/lib/python3.10 && \
-    chmod -R go=u /build
+    chmod -R go=u /build
 
 # ---- Stage 2: Runtime (Final Image) ----
 FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} as runtime
@@ -135,28 +137,28 @@ LABEL org.opencontainers.image.documentation = "https://docs.nerf.studio/"
 
 # Minimal dependencies to run COLMAP binary compiled in the builder stage.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends --no-install-suggests \
-        libboost-filesystem1.74.0 \
-        libboost-program-options1.74.0 \
-        libc6 \
-        libceres2 \
-        libfreeimage3 \
-        libgcc-s1 \
-        libgl1 \
-        libglew2.2 \
-        libgoogle-glog0v5 \
-        libqt5core5a \
-        libqt5gui5 \
-        libqt5widgets5 \
-        python3.10 \
-        python3.10-dev \
-        build-essential \
-        python-is-python3 \
-        ffmpeg \
-        # Git en pip zijn handig om te hebben in de runtime
-        git \
-        python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        libboost-filesystem1.74.0 \
+        libboost-program-options1.74.0 \
+        libc6 \
+        libceres2 \
+        libfreeimage3 \
+        libgcc-s1 \
+        libgl1 \
+        libglew2.2 \
+        libgoogle-glog0v5 \
+        libqt5core5a \
+        libqt5gui5 \
+        libqt5widgets5 \
+        python3.10 \
+        python3.10-dev \
+        build-essential \
+        python-is-python3 \
+        ffmpeg \
+        # Git en pip zijn handig om te hebben in de runtime
+        git \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 # Make python3.10 the default python
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
