@@ -5,8 +5,7 @@ ARG NVIDIA_CUDA_VERSION=11.8.0
 ARG CUDA_ARCHITECTURES="90;89;86;80;75;70;61"
 ARG NERFSTUDIO_VERSION="" # Keep empty to use main branch unless needed
 
-# ---- Stage 0: Source Handling (No changes needed here) ----
-# Pull source either provided or from git.
+# ---- Stage 0: Source Handling ----
 FROM scratch as source_copy
 ONBUILD COPY . /tmp/nerfstudio
 FROM alpine/git as source_no_copy
@@ -24,7 +23,7 @@ ARG UBUNTU_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV QT_XCB_GL_INTEGRATION=xcb_egl
 
-# Install core dependencies, including python3.10-distutils for robust package compilation.
+# Install core dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         git \
@@ -49,9 +48,7 @@ RUN apt-get update && \
         libceres-dev \
         python3.10-dev \
         python3-pip \
-        # *** CRUCIAL ADDITION ***: Ensure necessary python dev tools for compilation
         python3.10-distutils \
-        # <<< ADDED FOR API SERVER >>> Add ffmpeg system library for video processing
         ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -93,7 +90,7 @@ RUN git clone https://github.com/colmap/colmap.git && \
     ninja install -j1 && \
     cd ~
 
-# Upgrade pip and install all dependencies in one block (now that environment is more robust).
+# Upgrade pip and install all dependencies in one block
 RUN pip install --no-cache-dir --upgrade pip 'setuptools<70.0.0' && \
     pip install --no-cache-dir torch==2.1.2+cu118 torchvision==0.16.2+cu118 'numpy<2.0.0' --extra-index-url https://download.pytorch.org/whl/cu118 && \
     git clone --branch master --recursive https://github.com/cvg/Hierarchical-Localization.git /opt/hloc && \
@@ -145,7 +142,7 @@ RUN apt-get update && \
         build-essential \
         python-is-python3 \
         ffmpeg \
-        # <<< ADDED FOR API SERVER >>> Add git and pip for installing our requirements
+        # Git en pip zijn handig om te hebben in de runtime
         git \
         python3-pip \
     && rm -rf /var/lib/apt/lists/*
@@ -160,26 +157,11 @@ COPY --from=builder /build/glomap/ /usr/local/
 COPY --from=builder /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 COPY --from=builder /usr/local/bin/ns* /usr/local/bin/
 
-# <<< ADDED FOR API SERVER >>>
-# Install our API server dependencies and Gunicorn
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install gunicorn
-
-# Copy our API server code
-COPY app.py .
-# <<< END ADDED SECTION >>>
-
-# Install nerfstudio cli auto completion (Keep this, useful if debugging inside container)
+# Install nerfstudio cli auto completion
 RUN /bin/bash -c 'ns-install-cli --mode install'
 
-# <<< MODIFIED CMD FOR API SERVER >>>
-# Run the Gunicorn server instead of bash
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--timeout", "900", "--workers", "1", "app:app"]
-# Using only 1 worker as Nerfstudio likely uses the full GPU
+# Start in een /workspace map
+WORKDIR /workspace
 
-# <<< MODIFIED CMD FOR API SERVER >>>
-# Run the Gunicorn server instead of bash
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--timeout", "900", "--workers", "1", "app:app"]
-# Using only 1 worker as Nerfstudio likely uses the full GPU
+# Start een bash terminal als standaard commando
+CMD ["bash"]
