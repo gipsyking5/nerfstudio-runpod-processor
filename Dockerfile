@@ -111,14 +111,12 @@ RUN pip install --no-cache-dir pycolmap==0.6.1 pyceres==2.1 omegaconf==2.3.0
 
 # Install gsplat and nerfstudio.
 COPY --from=source /tmp/nerfstudio/ /tmp/nerfstudio
-# FIX START: Vervang de falende installatie van gsplat met een specifieke, bekende werkende commit.
+# FIX #1: Gebruik een vaste commit van gsplat om compilatieproblemen (exit code 1) te vermijden.
 RUN export TORCH_CUDA_ARCH_LIST="$(echo "$CUDA_ARCHITECTURES" | tr ';' '\n' | awk '$0 > 70 {print substr($0,1,1)"."substr($0,2)}' | tr '\n' ' ' | sed 's/ $//')" && \
     export MAX_JOBS=4 && \
-    # Gebruik een vaste commit van gsplat om compilatieproblemen met de nieuwste HEAD te vermijden.
     pip install --no-cache-dir "git+https://github.com/nerfstudio-project/gsplat.git@6d72110c3f5ccdb1e2f9d51111d4e022f4762551" && \
     pip install --no-cache-dir /tmp/nerfstudio 'numpy<2.0.0' && \
     rm -rf /tmp/nerfstudio
-# FIX END
 
 # Fix permissions
 RUN chmod -R go=u /usr/local/lib/python3.10 && \
@@ -136,16 +134,17 @@ LABEL org.opencontainers.image.base.name="docker.io/library/nvidia/cuda:${NVIDIA
 LABEL org.opencontainers.image.documentation = "https://docs.nerf.studio/"
 
 # Minimal dependencies to run COLMAP binary compiled in the builder stage.
+# FIX #2: Verwijder harde versienummers die exit code 127 veroorzaakten.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
-        libboost-filesystem1.74.0 \
-        libboost-program-options1.74.0 \
+        libboost-filesystem1.74-dev \
+        libboost-program-options1.74-dev \
         libc6 \
         libceres2 \
         libfreeimage3 \
         libgcc-s1 \
         libgl1 \
-        libglew2.2 \
+        libglew-dev \
         libgoogle-glog0v5 \
         libqt5core5a \
         libqt5gui5 \
@@ -155,7 +154,6 @@ RUN apt-get update && \
         build-essential \
         python-is-python3 \
         ffmpeg \
-        # Git en pip zijn handig om te hebben in de runtime
         git \
         python3-pip \
     && rm -rf /var/lib/apt/lists/*
